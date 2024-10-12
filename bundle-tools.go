@@ -21,28 +21,22 @@ import (
 
 // listBundle lê um arquivo de pacote e imprime os dados da tabela.
 func listBundle(bundlePath string) error {
-	// Verifica se o arquivo existe.
 	if _, err := os.Stat(bundlePath); os.IsNotExist(err) {
 		return fmt.Errorf("%s does not exist", bundlePath)
 	}
 
-	// Abre o arquivo para leitura.
 	file, err := os.Open(bundlePath)
 	if err != nil {
 		return fmt.Errorf("unable to open %s: %w", bundlePath, err)
 	}
 	defer file.Close()
 
-	// Obtém os dados da tabela.
 	_, list, err := getTableData(file)
 	if err != nil {
 		return fmt.Errorf("error getting table data: %w", err)
 	}
 
-	// Itera sobre a lista e imprime os dados.
 	for _, item := range list {
-		// A função fmt.Sprintf é usada para criar uma string formatada
-		// com os pares chave-valor do item.
 		itemStr := ""
 		for k, v := range item {
 			itemStr += fmt.Sprintf("%s: %v, ", k, v)
@@ -170,7 +164,7 @@ func convertWav(data *[]byte) error {
 	return nil
 }
 
-func extractBundle(bundlePath string, extractPath string, pattern string) error {
+func extractBundle(bundlePath, extractPath, pattern string) error {
 	if _, err := os.Stat(bundlePath); os.IsNotExist(err) {
 		return fmt.Errorf("%s does not exist", bundlePath)
 	}
@@ -192,7 +186,6 @@ func extractBundle(bundlePath string, extractPath string, pattern string) error 
 	}
 
 	for _, h := range list {
-		// Verifica se h["name"] é uma string e se corresponde ao padrão
 		name, ok := h["name"].(string)
 		if !ok || !re.MatchString(name) {
 			continue
@@ -289,34 +282,27 @@ func readFileIn(filename string) ([]byte, error) {
 	ext := path.Ext(filename)
 	if len(data) >= 44 && ext == ".wav" {
 		fmt.Println("Converting wav to cnv")
-		var chunkID [4]byte
-		var chunkSize uint32
-		var format [4]byte
-		var sub1ID [4]byte
-		var sub1Size uint32
-		var audioFormat uint16
-		var nChannels uint16
-		var sampleRate uint32
-		var byteRate uint32
-		var blockAlign uint16
-		var bitsPerSample uint16
-		var sub2ID [4]byte
-		var sub2Size uint32
+		var (
+			chunkID       [4]byte
+			chunkSize     = binary.LittleEndian.Uint32(data[4:8])
+			format        [4]byte
+			sub1ID        [4]byte
+			sub1Size      = binary.LittleEndian.Uint32(data[16:20])
+			audioFormat   = binary.LittleEndian.Uint16(data[20:22])
+			nChannels     = binary.LittleEndian.Uint16(data[22:24])
+			sampleRate    = binary.LittleEndian.Uint32(data[24:28])
+			byteRate      = binary.LittleEndian.Uint32(data[28:32])
+			blockAlign    = binary.LittleEndian.Uint16(data[32:34])
+			bitsPerSample = binary.LittleEndian.Uint16(data[34:36])
+			sub2ID        [4]byte
+			sub2Size      = binary.LittleEndian.Uint32(data[40:44])
+		)
 
 		// Unpack WAV header
 		copy(chunkID[:], data[0:4])
-		chunkSize = binary.LittleEndian.Uint32(data[4:8])
 		copy(format[:], data[8:12])
 		copy(sub1ID[:], data[12:16])
-		sub1Size = binary.LittleEndian.Uint32(data[16:20])
-		audioFormat = binary.LittleEndian.Uint16(data[20:22])
-		nChannels = binary.LittleEndian.Uint16(data[22:24])
-		sampleRate = binary.LittleEndian.Uint32(data[24:28])
-		byteRate = binary.LittleEndian.Uint32(data[28:32])
-		blockAlign = binary.LittleEndian.Uint16(data[32:34])
-		bitsPerSample = binary.LittleEndian.Uint16(data[34:36])
 		copy(sub2ID[:], data[36:40])
-		sub2Size = binary.LittleEndian.Uint32(data[40:44])
 
 		if string(chunkID[:]) != "RIFF" || string(format[:]) != "WAVE" ||
 			string(sub1ID[:]) != "fmt " || sub1Size != 16 ||
@@ -387,7 +373,7 @@ func readFileIn(filename string) ([]byte, error) {
 }
 
 // pack empacota dados, similar ao pack em Perl (simplificada)
-func pack(format string, values ...interface{}) []byte {
+func pack(values ...interface{}) []byte {
 	var out []byte
 	for _, v := range values {
 		switch val := v.(type) {
@@ -419,20 +405,17 @@ func getFileKey(offset int64) byte {
 }
 
 func patchFile(OFH *os.File, inFileName string, ftable map[string]map[string]interface{}) error {
-	// Verifica se a entrada no ftable existe
 	fileEntry, exists := ftable[inFileName]
 	if !exists {
 		return fmt.Errorf("file entry not found in ftable for %s", inFileName)
 	}
 
-	// Ler o arquivo de entrada
 	rData, err := readFileIn(inFileName)
 	if err != nil {
 		return fmt.Errorf("error reading input file: %v", err)
 	}
 	datLen := len(rData)
 
-	// Verificar o tamanho do arquivo
 	if datLen <= fileEntry["length"].(int) {
 		fmt.Printf("Seeking to %d.\n", fileEntry["offset"].(int64))
 		_, err := OFH.Seek(fileEntry["offset"].(int64), io.SeekStart)
@@ -524,7 +507,6 @@ func fileAgeInDays(modTime time.Time) float64 {
 }
 
 func rpatchDir(OFH *os.File, fullPath string, localPath string, hTable map[string]map[string]interface{}, bundleMtime float64) {
-	// Abrir o diretório
 	dir, err := os.Open(fullPath)
 	if err != nil {
 		fmt.Printf("Error opening directory %s: %v\n", fullPath, err)
@@ -532,7 +514,6 @@ func rpatchDir(OFH *os.File, fullPath string, localPath string, hTable map[strin
 	}
 	defer dir.Close()
 
-	// Ler os arquivos no diretório
 	files, err := dir.Readdirnames(0)
 	if err != nil {
 		fmt.Printf("Error reading directory %s: %v\n", fullPath, err)
@@ -584,7 +565,7 @@ func rpatchDir(OFH *os.File, fullPath string, localPath string, hTable map[strin
 	}
 }
 
-// decryptFileTableBlock decripts the file table block
+// decryptFileTableBlock decrypts the file table block
 func decryptFileTableBlock(index int, str []byte) []byte {
 	// Aplicar a máscara de 9 bits
 	index = index & 0x1ff
@@ -616,7 +597,6 @@ func getTableData(IFH *os.File) (map[string]map[string]interface{}, []map[string
 		return nil, nil, fmt.Errorf("error seeking to start of file: %v", err)
 	}
 
-	// Ler os 2 bytes para o número de arquivos
 	data := make([]byte, 2)
 	n, err := IFH.Read(data)
 	if err != nil || n != len(data) {
@@ -631,7 +611,6 @@ func getTableData(IFH *os.File) (map[string]map[string]interface{}, []map[string
 		return nil, nil, fmt.Errorf("error reading table: %v", err)
 	}
 
-	// Função para decriptar (placeholder)
 	data2 := decryptFileTableBlock(0, data)
 
 	// Tabelas que serão retornadas
@@ -672,29 +651,29 @@ func getTableData(IFH *os.File) (map[string]map[string]interface{}, []map[string
 }
 
 // decryptFileTableBlock decrypts the file table block
-func patchBundle(daybreakPath string, new_00_Path string) { // backup unused, it was the first argument: backupPath string
+func patchBundle(datFilePath string, outputPath string) { // original line had 3 arguments
 
 	//var IFH *os.File
-	var OFH *os.File
+	var outputFile *os.File
 
-	fileInfo, err := os.Stat(daybreakPath)
+	fileInfo, err := os.Stat(datFilePath)
 	if err != nil {
 		log.Fatal(err)
 	}
 	// Get the last modified time of the file
 	mtime := time.Since(fileInfo.ModTime()).Hours() / 24
 
-	OFH, err = os.OpenFile(daybreakPath, os.O_RDWR, 0644)
+	outputFile, err = os.OpenFile(datFilePath, os.O_RDWR, 0644)
 	if err != nil {
-		log.Fatalf("Unable to open %s for writing: %v", daybreakPath, err)
+		log.Fatalf("Unable to open %s for writing: %v", datFilePath, err)
 	}
 
-	hTable, _, err := getTableData(OFH) // second value used to be unused lTable, added error check
+	hTable, _, err := getTableData(outputFile)
 	if err != nil {
 		log.Fatalf("Unable to get table data: %v", err)
 	}
 
-	rpatchDir(OFH, new_00_Path, "", hTable, mtime)
+	rpatchDir(outputFile, outputPath, "", hTable, mtime)
 }
 
 func main() {
