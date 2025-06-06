@@ -41,6 +41,7 @@ bundleToolsDaybreakGo.exe --list input.DAT
    - You can automate this step with a simple script.
 
 5. **Convert `.X` to `.glTF` Using Assimp**  
+   Install assimp from https://github.com/assimp/assimp/releases
    Use the following command:  
    ```bash
    assimp.exe export OriginalModel.x OutputModel.gltf
