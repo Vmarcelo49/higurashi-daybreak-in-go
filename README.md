@@ -1,14 +1,23 @@
-# This tool can extract, Update and List files in .DAT Higurashi Daybreak files
+# This tool can extract, update, and list files in `.DAT` Higurashi Daybreak files
 
-# Usage:
-extracting files <br> 
-bundleToolsDaybreakGo.exe --extract input.DAT .\outputFolder\ filePatternoptional  <br> 
-overwriting  <br> 
-bundleToolsDaybreakGo.exe --update input.DAT target.DAT>  <br> 
-listing files inside the .dat  <br> 
+## Usage:
+
+**Extracting files:**  
+```bash
+bundleToolsDaybreakGo.exe --extract input.DAT .\outputFolder\ filePatternOptional
+```
+
+**Overwriting:**  
+```bash
+bundleToolsDaybreakGo.exe --update input.DAT target.DAT
+```
+
+**Listing files inside the .DAT:**  
+```bash
 bundleToolsDaybreakGo.exe --list input.DAT
+```
 
-not finished and barely tested!
+> ⚠️ Not finished and barely tested!
 
 # How to Convert Daybreak `.X` Files to GLTF
 
