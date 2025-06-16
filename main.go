@@ -23,10 +23,6 @@ func main() {
 		fmt.Printf("  %s <datfile> -single-patch <input_file>:<index> (Command line: Patch single file)\n", filepath.Base(os.Args[0]))
 		fmt.Println("  (Note: update and patch operations create backups of the original .DAT file before patching)")
 	}
-
-	// Image output format is now fixed to BMP
-	ImageOutputFormat = "bmp"
-
 	// Handle arguments manually for the correct syntax
 	args := os.Args[1:]
 

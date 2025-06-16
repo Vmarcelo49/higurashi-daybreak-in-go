@@ -123,7 +123,7 @@ func extractBundle(bundlePath, extractPath, pattern string) error {
 				if err != nil {
 					return fmt.Errorf("error converting image: %w", err)
 				}
-				outputPath = outputPath[:len(outputPath)-4] + "." + ImageOutputFormat
+				outputPath = outputPath[:len(outputPath)-4] + ".bmp"
 			} else {
 				fmt.Printf("Bad data key (%d) in %s, saving as .unknown\n", dataKey, outputPath)
 				outputPath = outputPath[:len(outputPath)-4] + ".unknown"
@@ -228,12 +228,10 @@ func matchFileToIndex(filePath string, fileEntries []*FileEntry) (int, error) {
 	}
 	// If we don't have a specific mapping, try to find a matching entry
 	for i, entry := range fileEntries {
-		entryName := strings.ToLower(entry.Name)
-		// Try to match by filename
+		entryName := strings.ToLower(entry.Name) // Try to match by filename
 		if strings.Contains(entryName, nameLC) { // If we find a match on the name, check for extension match
 			if (ext == ".ogg" && strings.HasSuffix(entryName, ".ogg")) ||
 				(ext == ".sfl" && strings.HasSuffix(entryName, ".sfl")) ||
-				(ext == ".tga" && strings.HasSuffix(entryName, ".cnv")) ||
 				(ext == ".bmp" && strings.HasSuffix(entryName, ".cnv")) {
 				return i, nil
 			}
@@ -249,13 +247,14 @@ func patchFileByIndex(outputFile *os.File, inputFileName string, fileEntries []*
 		return fmt.Errorf("invalid file index: %d (max: %d)", targetIndex, len(fileEntries)-1)
 	}
 	// Get the target entry
-	fileEntry := fileEntries[targetIndex]
-	// Read and process the input file
+	fileEntry := fileEntries[targetIndex] // Read and process the input file
 	var fileData []byte
-	var err error // Check if this is a TGA or BMP file being patched to a CNV file (BMP preferred)
+	var err error
+
+	// Check if this is a BMP file being patched to a CNV file
 	if strings.HasSuffix(strings.ToLower(fileEntry.Name), ".cnv") {
 		ext := strings.ToLower(filepath.Ext(inputFileName))
-		if ext == ".tga" || ext == ".bmp" {
+		if ext == ".bmp" {
 			// Convert the image back to CNV format
 			fmt.Printf("Converting %s back to CNV format...\n", filepath.Base(inputFileName))
 			convertedData, err := convertImageToCnv(inputFileName)

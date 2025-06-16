@@ -196,7 +196,7 @@ func (g *GUI) Run() {
 					strings.Contains(strings.ToLower(entry.Name), "sound") {
 					fileExtension = "wav"
 				} else {
-					fileExtension = ImageOutputFormat // Use the global setting
+					fileExtension = "bmp" // Use BMP format
 				}
 			} else {
 				// For non-cnv files, use the original extension
@@ -215,7 +215,7 @@ func (g *GUI) Run() {
 					strings.Contains(strings.ToLower(defaultFilename), "sound") {
 					defaultFilename = defaultFilename[:len(defaultFilename)-4] + ".wav"
 				} else {
-					defaultFilename = defaultFilename[:len(defaultFilename)-4] + "." + ImageOutputFormat
+					defaultFilename = defaultFilename[:len(defaultFilename)-4] + ".bmp"
 				}
 			}
 
@@ -510,18 +510,17 @@ func (g *GUI) extractFileToPath(entry *FileEntry, outputPath string) {
 				g.showError(fmt.Sprintf("Error converting wav: %v", err))
 				return
 			}
-			// Don't change the output path as it was selected by the user
-		} else if dataKey == 24 || dataKey == 32 {
+			// Don't change the output path as it was selected by the user		} else if dataKey == 24 || dataKey == 32 {
 			// Always convert image files
-			g.statusBar.SetText(fmt.Sprintf("Converting %s as image file (BPP: %d) to %s format...",
-				entry.Name, dataKey, ImageOutputFormat))
+			g.statusBar.SetText(fmt.Sprintf("Converting %s as image file (BPP: %d) to bmp format...",
+				entry.Name, dataKey))
 			err = convertImage(&decryptedData)
 			if err != nil {
 				g.showError(fmt.Sprintf("Error converting image: %v", err))
 				return
 			}
-			g.statusBar.SetText(fmt.Sprintf("Successfully converted to %s format, data size: %d bytes",
-				ImageOutputFormat, len(decryptedData)))
+			g.statusBar.SetText(fmt.Sprintf("Successfully converted to bmp format, data size: %d bytes",
+				len(decryptedData)))
 			// Don't change the output path as it was selected by the user
 		} else {
 			g.statusBar.SetText(fmt.Sprintf("Bad data key (%d) in %s - extracting without conversion", dataKey, outputPath))
@@ -635,8 +634,8 @@ func getFileType(filename string) string {
 		return "Image or audio file (will be converted)"
 	case ".wav", ".mp3":
 		return "Audio File"
-	case ".bmp", ".tga", ".jpg":
-		return "Image File (BMP preferred for patching)"
+	case ".bmp":
+		return "Image File (BMP format)"
 	case ".txt":
 		return "Text File"
 	case ".x":

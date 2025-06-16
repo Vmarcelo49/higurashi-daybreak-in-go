@@ -6,10 +6,6 @@ import (
 	"fmt"
 )
 
-// ImageOutputFormat controls the output format for converted images
-// Only BMP format is supported
-var ImageOutputFormat = "bmp"
-
 func convertImage(data *[]byte) error {
 	return convertImageToBMP(data)
 }

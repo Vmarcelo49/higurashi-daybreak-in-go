@@ -1,0 +1,32 @@
+# Executable files
+*.exe
+
+# DAT files (game data files)
+*.dat
+
+# Backup files
+*.bak
+
+# Windows thumbnail cache files
+Thumbs.db
+ehthumbs.db
+
+# Folder config file
+Desktop.ini
+
+# Recycle Bin used on file shares
+$RECYCLE.BIN/
+
+# VS Code settings (optional - uncomment if you want to ignore)
+# .vscode/
+
+# Go build artifacts
+*.test
+*.prof
+
+# Temporary files
+*.tmp
+*.temp
+
+# Log files
+*.log
