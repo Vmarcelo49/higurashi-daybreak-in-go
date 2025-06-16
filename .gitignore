@@ -1,0 +1,5 @@
+# Executable files
+*.exe
+
+# DAT files (game data files)
+*.dat
