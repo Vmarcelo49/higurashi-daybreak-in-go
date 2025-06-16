@@ -13,7 +13,7 @@ func decryptFileTableBlock(index int, encryptedData []byte) []byte {
 	decryptedData := make([]byte, len(encryptedData))
 
 	// Loop to decrypt each byte
-	for i := 0; i < len(encryptedData); i++ {
+	for i := range encryptedData {
 		// Apply XOR with the key
 		decryptedData[i] = encryptedData[i] ^ byte(key)
 

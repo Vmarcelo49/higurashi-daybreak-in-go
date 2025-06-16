@@ -2,20 +2,40 @@
 
 ## Usage:
 
-**Extracting files:**  
+**GUI Mode (default):**  
 ```bash
-bundleToolsDaybreakGo.exe --extract input.DAT .\outputFolder\ filePatternOptional
+BundleTools.exe
+# or
+BundleTools.exe <datfile>
+# or
+BundleTools.exe -gui
 ```
 
-**Overwriting:**  
-```bash
-bundleToolsDaybreakGo.exe --update input.DAT target.DAT
-```
+**Command Line Mode:**
 
 **Listing files inside the .DAT:**  
 ```bash
-bundleToolsDaybreakGo.exe --list input.DAT
+BundleTools.exe <datfile> -list
 ```
+
+**Extracting files:**  
+```bash
+BundleTools.exe <datfile> -extract <output_folder>
+# or with file pattern filter
+BundleTools.exe <datfile> -extract <output_folder> -pattern <files_pattern>
+```
+
+**Updating/Patching from source directory:**  
+```bash
+BundleTools.exe <datfile> -update <source_files_path>
+```
+
+**Patching a single file:**  
+```bash
+BundleTools.exe <datfile> -single-patch <input_file>:<index>
+```
+
+> **Note:** Update and patch operations create backups of the original .DAT file before patching.
 
 > ⚠️ Not finished and barely tested!
 

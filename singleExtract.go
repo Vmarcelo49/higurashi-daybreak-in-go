@@ -51,13 +51,11 @@ func patchSingleFile(datFilePath string, inputFilePath string, targetIndex int) 
 	if targetIndex < 0 || targetIndex >= len(fileEntries) {
 		return fmt.Errorf("invalid file index: %d (valid range: 0-%d)", targetIndex, len(fileEntries)-1)
 	}
-
 	// Read the new file data
-	var newFileData []byte
-	// Check if this is an image file that needs conversion to CNV format
+	var newFileData []byte // Check if this is an image file that needs conversion to CNV format (BMP preferred)
 	if strings.HasSuffix(strings.ToLower(fileEntries[targetIndex].Name), ".cnv") {
 		ext := strings.ToLower(filepath.Ext(inputFilePath))
-		if ext == ".png" || ext == ".tga" {
+		if ext == ".tga" || ext == ".bmp" {
 			// Convert the image back to CNV format
 			fmt.Printf("Converting %s back to CNV format...\n", filepath.Base(inputFilePath))
 			convertedData, err := convertImageToCnv(inputFilePath)

@@ -635,8 +635,8 @@ func getFileType(filename string) string {
 		return "Image or audio file (will be converted)"
 	case ".wav", ".mp3":
 		return "Audio File"
-	case ".tga", ".png", ".jpg", ".bmp":
-		return "Image File"
+	case ".bmp", ".tga", ".jpg":
+		return "Image File (BMP preferred for patching)"
 	case ".txt":
 		return "Text File"
 	case ".x":

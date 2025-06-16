@@ -1,149 +1,17 @@
 package main
 
 import (
-	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"image"
-	"image/color"
-	"image/png"
 )
 
 // ImageOutputFormat controls the output format for converted images
-// Possible values: "tga", "png"
-var ImageOutputFormat = "tga"
-
-// convertToPng converts the image data to PNG format
-func convertToPng(width, height uint32, pixelData []byte) ([]byte, error) {
-	// Create a new RGBA image
-	img := image.NewRGBA(image.Rect(0, 0, int(width), int(height)))
-
-	// Copy pixel data to the image
-	// Note: Assuming the pixel data is in BGRA format (common in TGA)
-	for y := range int(height) {
-		for x := range int(width) {
-			// Get the pixel index in the byte array
-			idx := (y*int(width) + x) * 4
-			if idx+3 >= len(pixelData) {
-				return nil, errors.New("pixel data is corrupted or incomplete")
-			}
-
-			// Read BGRA values
-			b := pixelData[idx]
-			g := pixelData[idx+1]
-			r := pixelData[idx+2]
-			a := pixelData[idx+3]
-
-			// Set pixel in the image (in RGBA order)
-			img.SetRGBA(x, y, color.RGBA{r, g, b, a})
-		}
-	}
-
-	// Encode as PNG
-	var buf bytes.Buffer
-	if err := png.Encode(&buf, img); err != nil {
-		return nil, fmt.Errorf("failed to encode PNG: %w", err)
-	}
-
-	fmt.Printf("Successfully converted to PNG: %dx%d pixels\n", width, height)
-	return buf.Bytes(), nil
-}
+// Only BMP format is supported
+var ImageOutputFormat = "bmp"
 
 func convertImage(data *[]byte) error {
-	const headerSize = 17
-	if len(*data) < headerSize {
-		return errors.New("data is too short to read image header")
-	}
-
-	// Unpack image header
-	bpp := (*data)[0]
-	width := binary.LittleEndian.Uint32((*data)[1:5])
-	height := binary.LittleEndian.Uint32((*data)[5:9])
-	width2 := binary.LittleEndian.Uint32((*data)[9:13])
-	zero := (*data)[headerSize-1]
-
-	// Check width consistency
-	if width != width2 {
-		fmt.Printf(" *** Warning ----: Two width values disagree: %d %d\n", width, width2)
-	}
-
-	// Check bits per pixel
-	if bpp != 24 && bpp != 32 {
-		return fmt.Errorf("BPP must be 24 or 32, not %d", bpp)
-	}
-
-	// Check data length consistency
-	if int(width2)*int(height)*4+headerSize != len(*data) {
-		return fmt.Errorf("data lengths disagree: %d vs %d", int(width2)*int(height)*4+headerSize, len(*data))
-	}
-
-	if zero != 0 {
-		return errors.New("nonzero value in final header block")
-	} // Extract pixel data before we prepare the output data
-	pixelData := make([]byte, int(width)*int(height)*4)
-	pixelIndex := 0
-
-	// Read rows based on output format
-	// For TGA: Reverse row order (bottom-up)
-	// For PNG: Keep normal row order (top-down)
-	if ImageOutputFormat == "tga" {
-		// Reverse row order for TGA (bottom-up)
-		for r := int(height) - 1; r >= 0; r-- {
-			for c := range int(width) {
-				start := headerSize + 4*(int(r)*int(width)+c)
-				if start+4 > len(*data) {
-					return errors.New("data overflow while reading pixels")
-				}
-
-				pixelData[pixelIndex] = (*data)[start]
-				pixelData[pixelIndex+1] = (*data)[start+1]
-				pixelData[pixelIndex+2] = (*data)[start+2]
-				pixelData[pixelIndex+3] = (*data)[start+3]
-				pixelIndex += 4
-			}
-		}
-	} else {
-		// Normal row order for PNG (top-down)
-		for r := range int(height) {
-			for c := range int(width) {
-				start := headerSize + 4*(int(r)*int(width)+c)
-				if start+4 > len(*data) {
-					return errors.New("data overflow while reading pixels")
-				}
-
-				pixelData[pixelIndex] = (*data)[start]
-				pixelData[pixelIndex+1] = (*data)[start+1]
-				pixelData[pixelIndex+2] = (*data)[start+2]
-				pixelData[pixelIndex+3] = (*data)[start+3]
-				pixelIndex += 4
-			}
-		}
-	}
-
-	// Output based on selected format
-	var outData []byte
-	var err error
-
-	if ImageOutputFormat == "png" {
-		// Convert to PNG
-		outData, err = convertToPng(width, height, pixelData)
-		if err != nil {
-			return fmt.Errorf("PNG conversion failed: %w", err)
-		}
-	} else {
-		// Default: Convert to TGA
-		outData = make([]byte, 0, 18+len(pixelData))
-		outData = append(outData, 0, 0, 2)    // Header
-		outData = append(outData, 0, 0, 0, 0) // No image ID
-		outData = append(outData, 0, 0)       // No color map
-		outData = append(outData, byte(width), byte(width>>8), byte(height), byte(height>>8))
-		outData = append(outData, 32, 0x08) // Bits per pixel and image descriptor
-		outData = append(outData, pixelData...)
-	}
-
-	*data = outData
-	return nil
+	return convertImageToBMP(data)
 }
 
 func convertWav(data *[]byte) error {
@@ -203,3 +71,96 @@ func convertWav(data *[]byte) error {
 	*data = outData
 	return nil
 }
+
+// convertImageToBMP converts CNV image data to BMP format
+func convertImageToBMP(data *[]byte) error {
+	const headerSize = 17
+	if len(*data) < headerSize {
+		return errors.New("data is too short to read image header")
+	}
+
+	// Unpack image header
+	bpp := (*data)[0]
+	width := binary.LittleEndian.Uint32((*data)[1:5])
+	height := binary.LittleEndian.Uint32((*data)[5:9])
+	width2 := binary.LittleEndian.Uint32((*data)[9:13])
+	zero := (*data)[headerSize-1]
+
+	// Check width consistency
+	if width != width2 {
+		fmt.Printf(" *** Warning ----: Two width values disagree: %d %d\n", width, width2)
+	}
+
+	// Check bits per pixel
+	if bpp != 24 && bpp != 32 {
+		return fmt.Errorf("BPP must be 24 or 32, not %d", bpp)
+	}
+
+	// Check data length consistency
+	if int(width2)*int(height)*4+headerSize != len(*data) {
+		return fmt.Errorf("data lengths disagree: %d vs %d", int(width2)*int(height)*4+headerSize, len(*data))
+	}
+
+	if zero != 0 {
+		return errors.New("nonzero value in final header block")
+	}
+
+	// Calculate BMP parameters
+	rowSize := ((int(width)*4 + 3) / 4) * 4 // BMP rows must be padded to 4-byte boundaries
+	imageSize := rowSize * int(height)
+	fileSize := 54 + imageSize // 54 bytes for BMP header + image data
+
+	// Create BMP header (54 bytes total)
+	bmpData := make([]byte, fileSize)
+
+	// BMP File Header (14 bytes)
+	bmpData[0] = 'B'                                              // Signature
+	bmpData[1] = 'M'                                              // Signature
+	binary.LittleEndian.PutUint32(bmpData[2:6], uint32(fileSize)) // File size
+	binary.LittleEndian.PutUint32(bmpData[6:10], 0)               // Reserved
+	binary.LittleEndian.PutUint32(bmpData[10:14], 54)             // Data offset
+
+	// BMP Info Header (40 bytes)
+	binary.LittleEndian.PutUint32(bmpData[14:18], 40)                // Info header size
+	binary.LittleEndian.PutUint32(bmpData[18:22], uint32(width))     // Width
+	binary.LittleEndian.PutUint32(bmpData[22:26], uint32(height))    // Height (positive = bottom-up)
+	binary.LittleEndian.PutUint16(bmpData[26:28], 1)                 // Planes
+	binary.LittleEndian.PutUint16(bmpData[28:30], 32)                // Bits per pixel (always 32 for BGRA)
+	binary.LittleEndian.PutUint32(bmpData[30:34], 0)                 // Compression (0 = none)
+	binary.LittleEndian.PutUint32(bmpData[34:38], uint32(imageSize)) // Image size
+	binary.LittleEndian.PutUint32(bmpData[38:42], 2835)              // X pixels per meter
+	binary.LittleEndian.PutUint32(bmpData[42:46], 2835)              // Y pixels per meter
+	binary.LittleEndian.PutUint32(bmpData[46:50], 0)                 // Colors used
+	binary.LittleEndian.PutUint32(bmpData[50:54], 0)                 // Important colors
+
+	// Convert pixel data (CNV is BGRA, BMP expects BGRA but bottom-up)
+	pixelIndex := 54
+	for r := int(height) - 1; r >= 0; r-- { // BMP is bottom-up
+		for c := 0; c < int(width); c++ {
+			srcPos := headerSize + 4*(r*int(width)+c)
+			if srcPos+4 > len(*data) {
+				return errors.New("data overflow while reading pixels")
+			}
+
+			// Copy BGRA directly (CNV and BMP both use BGRA)
+			bmpData[pixelIndex] = (*data)[srcPos]     // B
+			bmpData[pixelIndex+1] = (*data)[srcPos+1] // G
+			bmpData[pixelIndex+2] = (*data)[srcPos+2] // R
+			bmpData[pixelIndex+3] = (*data)[srcPos+3] // A
+			pixelIndex += 4
+		}
+
+		// Add padding to reach 4-byte boundary
+		for pad := int(width) * 4; pad < rowSize; pad++ {
+			if pixelIndex < len(bmpData) {
+				bmpData[pixelIndex] = 0
+				pixelIndex++
+			}
+		}
+	}
+
+	*data = bmpData
+	return nil
+}
+
+// convertImage converts CNV image data to BMP format

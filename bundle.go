@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/binary"
 	"fmt"
 	"io"
 	"log"
@@ -10,18 +9,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
-
-	"golang.org/x/text/encoding/japanese"
-	"golang.org/x/text/transform"
 )
-
-// FileEntry represents an entry in the file table
-type FileEntry struct {
-	Index  int    // Index of the file in the table
-	Offset uint32 // Offset of the file in the bundle
-	Length uint32 // Length of the file data
-	Name   string // Name of the file
-}
 
 // listBundle reads a bundle file and prints the table data
 func listBundle(bundlePath string) error {
@@ -103,7 +91,6 @@ func extractBundle(bundlePath, extractPath, pattern string) error {
 		}
 
 		outputPath := extractPath + string(os.PathSeparator) + entry.Name
-
 		// Create directories as needed for the output path
 		dirPath := filepath.Dir(outputPath)
 		if err = os.MkdirAll(dirPath, os.ModePerm); err != nil {
@@ -114,23 +101,32 @@ func extractBundle(bundlePath, extractPath, pattern string) error {
 			dataKey := decryptedData[0]
 
 			if dataKey == 1 {
-				err = convertWav(&decryptedData)
+				// Add panic recovery for WAV conversion
+				func() {
+					defer func() {
+						if r := recover(); r != nil {
+							fmt.Printf("WAV conversion panicked for %s: %v\n", entry.Name, r)
+							err = fmt.Errorf("WAV conversion panicked: %v", r)
+						}
+					}()
+					err = convertWav(&decryptedData)
+				}()
+
 				if err != nil {
-					return fmt.Errorf("error converting wav: %w", err)
+					fmt.Printf("Error converting WAV for %s: %v, saving as .unknown\n", entry.Name, err)
+					outputPath = outputPath[:len(outputPath)-4] + ".unknown"
+				} else {
+					outputPath = outputPath[:len(outputPath)-4] + ".wav"
 				}
-				outputPath = outputPath[:len(outputPath)-4] + ".wav"
 			} else if dataKey == 24 || dataKey == 32 {
 				err = convertImage(&decryptedData)
 				if err != nil {
 					return fmt.Errorf("error converting image: %w", err)
 				}
-				if ImageOutputFormat == "png" {
-					outputPath = outputPath[:len(outputPath)-4] + ".png"
-				} else {
-					outputPath = outputPath[:len(outputPath)-4] + ".tga"
-				}
+				outputPath = outputPath[:len(outputPath)-4] + "." + ImageOutputFormat
 			} else {
-				fmt.Printf("Bad data key (%d) in %s\n", dataKey, outputPath)
+				fmt.Printf("Bad data key (%d) in %s, saving as .unknown\n", dataKey, outputPath)
+				outputPath = outputPath[:len(outputPath)-4] + ".unknown"
 			}
 		}
 
@@ -141,119 +137,6 @@ func extractBundle(bundlePath, extractPath, pattern string) error {
 		}
 	}
 	return nil
-}
-
-// index-based lookups are faster than name-based lookups
-func recursivePatchDir(outputFile *os.File, dirPath string, relPath string, fileEntries []*FileEntry, modificationTime float64) {
-	// Open the directory
-	dir, err := os.Open(dirPath)
-	if err != nil {
-		fmt.Printf("Unable to open %s: %v\n", dirPath, err)
-		return
-	}
-	defer dir.Close()
-
-	// Get all files in the directory
-	fileInfos, err := dir.Readdir(0)
-	if err != nil {
-		fmt.Printf("Error reading directory %s: %v\n", dirPath, err)
-		return
-	}
-
-	// Process each file
-	for _, fileInfo := range fileInfos {
-		fullPath := filepath.Join(dirPath, fileInfo.Name())
-		localPath := filepath.Join(relPath, fileInfo.Name())
-
-		// If it's a directory, recursively process it
-		if fileInfo.IsDir() {
-			recursivePatchDir(outputFile, fullPath, localPath, fileEntries, modificationTime)
-			continue
-		}
-
-		// Check if the file is recent enough to be patched
-		hoursSinceModified := float64(0)
-		if modificationTime > 0 {
-			hoursSinceModified = float64(fileInfo.ModTime().Hour()) / 24
-		}
-
-		if hoursSinceModified <= modificationTime {
-			// Find matching index for this file
-			index, err := matchFileToIndex(fullPath, fileEntries)
-			if err != nil {
-				fmt.Printf("Skipping %s: %v\n", fullPath, err)
-				continue
-			}
-
-			// Update the file using the index
-			err = patchFileByIndex(outputFile, fullPath, fileEntries, index)
-			if err != nil {
-				fmt.Printf("Error patching %s: %v\n", fullPath, err)
-			} else {
-				fmt.Printf("Successfully patched %s (index: %d)\n", fullPath, index)
-			}
-		}
-	}
-}
-
-// getTableData reads the table data from the file and returns a map of the table and a slice of the table
-func getTableData(inputFile *os.File) (map[string]*FileEntry, []*FileEntry, error) {
-	// Move to the beginning of the file
-	if _, err := inputFile.Seek(0, io.SeekStart); err != nil {
-		return nil, nil, fmt.Errorf("error seeking to start of file: %v", err)
-	}
-
-	buffer := make([]byte, 2)
-	bytesRead, err := inputFile.Read(buffer)
-	if err != nil || bytesRead != len(buffer) {
-		return nil, nil, fmt.Errorf("error reading table length: %v", err)
-	}
-	numFiles := binary.LittleEndian.Uint16(buffer)
-
-	// Read the file table
-	buffer = make([]byte, 268*int(numFiles))
-	bytesRead, err = inputFile.Read(buffer)
-	if err != nil || bytesRead != len(buffer) {
-		return nil, nil, fmt.Errorf("error reading table: %v", err)
-	}
-
-	decryptedData := decryptFileTableBlock(0, buffer)
-
-	// Tables to be returned
-	fileEntries := make([]*FileEntry, 0, numFiles)
-	fileEntryMap := make(map[string]*FileEntry, numFiles)
-
-	// Loop to process each file
-	for i := range int(numFiles) {
-		entry := decryptedData[i*268 : (i+1)*268]
-		filename := string(entry[:260])
-		length := binary.LittleEndian.Uint32(entry[260:264])
-		offset := binary.LittleEndian.Uint32(entry[264:268])
-
-		// Remove null bytes from the filename
-		filename = strings.TrimRight(filename, "\x00")
-
-		// Decode shift_jis
-		decodedFilenameReader := transform.NewReader(strings.NewReader(filename), japanese.ShiftJIS.NewDecoder())
-		decodedFilenameData, err := io.ReadAll(decodedFilenameReader)
-		if err != nil {
-			return nil, nil, fmt.Errorf("error decoding shift_jis: %v", err)
-		}
-
-		// Create the table entry
-		decodedFilename := string(decodedFilenameData)
-		fileEntry := &FileEntry{
-			Index:  i,
-			Offset: offset,
-			Length: length,
-			Name:   decodedFilename,
-		}
-
-		fileEntries = append(fileEntries, fileEntry)
-		fileEntryMap[decodedFilename] = fileEntry
-	}
-
-	return fileEntryMap, fileEntries, nil
 }
 
 func patchBundle(datFilePath string, outputPath string) {
@@ -346,13 +229,12 @@ func matchFileToIndex(filePath string, fileEntries []*FileEntry) (int, error) {
 	// If we don't have a specific mapping, try to find a matching entry
 	for i, entry := range fileEntries {
 		entryName := strings.ToLower(entry.Name)
-
 		// Try to match by filename
-		if strings.Contains(entryName, nameLC) {
-			// If we find a match on the name, check for extension match
+		if strings.Contains(entryName, nameLC) { // If we find a match on the name, check for extension match
 			if (ext == ".ogg" && strings.HasSuffix(entryName, ".ogg")) ||
 				(ext == ".sfl" && strings.HasSuffix(entryName, ".sfl")) ||
-				((ext == ".tga" || ext == ".png") && strings.HasSuffix(entryName, ".cnv")) {
+				(ext == ".tga" && strings.HasSuffix(entryName, ".cnv")) ||
+				(ext == ".bmp" && strings.HasSuffix(entryName, ".cnv")) {
 				return i, nil
 			}
 		}
@@ -370,11 +252,10 @@ func patchFileByIndex(outputFile *os.File, inputFileName string, fileEntries []*
 	fileEntry := fileEntries[targetIndex]
 	// Read and process the input file
 	var fileData []byte
-	var err error
-	// Check if this is a PNG/TGA file being patched to a CNV file
+	var err error // Check if this is a TGA or BMP file being patched to a CNV file (BMP preferred)
 	if strings.HasSuffix(strings.ToLower(fileEntry.Name), ".cnv") {
 		ext := strings.ToLower(filepath.Ext(inputFileName))
-		if ext == ".png" || ext == ".tga" {
+		if ext == ".tga" || ext == ".bmp" {
 			// Convert the image back to CNV format
 			fmt.Printf("Converting %s back to CNV format...\n", filepath.Base(inputFileName))
 			convertedData, err := convertImageToCnv(inputFileName)

@@ -1,32 +1,29 @@
 package main
 
 import (
-	"bytes"
 	"encoding/binary"
 	"fmt"
 	"image"
 	"image/color"
-	"image/png"
 	"os"
 	"path/filepath"
 	"strings"
 )
 
-// detectImageFormat determines if the file is a TGA or PNG based on file extension
-// and decodes the image data appropriately
+// detectImageFormat determines if the file is a TGA or BMP and decodes the image data
+// Note: BMP is the preferred format; TGA support is maintained for backward compatibility
 func detectImageFormat(filePath string, data []byte) (image.Image, error) {
 	ext := strings.ToLower(filepath.Ext(filePath))
 
 	switch ext {
-	case ".png":
-		// For PNG, we need to create a reader from the byte slice
-		reader := bytes.NewReader(data)
-		return png.Decode(reader)
 	case ".tga":
 		// For TGA, we can use our custom decoder
 		return decodeTGA(data)
+	case ".bmp":
+		// For BMP, we can use our custom decoder
+		return decodeBMP(data)
 	default:
-		return nil, fmt.Errorf("unsupported image format: %s", ext)
+		return nil, fmt.Errorf("unsupported image format: %s (only TGA and BMP are supported, BMP is preferred)", ext)
 	}
 }
 
@@ -85,14 +82,94 @@ func decodeTGA(data []byte) (image.Image, error) {
 	return img, nil
 }
 
-// convertImageToCnv converts a TGA or PNG file back to the proprietary CNV format
+// decodeBMP decodes a BMP image file into an image.Image
+func decodeBMP(data []byte) (image.Image, error) {
+	if len(data) < 54 {
+		return nil, fmt.Errorf("BMP data too short (need at least 54 bytes)")
+	}
+
+	// Check BMP signature
+	if data[0] != 0x42 || data[1] != 0x4D {
+		return nil, fmt.Errorf("invalid BMP signature")
+	}
+	// Read BMP header fields
+	fileSize := binary.LittleEndian.Uint32(data[2:6])
+	dataOffset := binary.LittleEndian.Uint32(data[10:14])
+	_ = binary.LittleEndian.Uint32(data[14:18]) // headerSize - not used but part of BMP format
+	width := int32(binary.LittleEndian.Uint32(data[18:22]))
+	height := int32(binary.LittleEndian.Uint32(data[22:26]))
+	bpp := binary.LittleEndian.Uint16(data[28:30])
+
+	fmt.Printf("BMP info: %dx%d, %d bpp, data offset: %d, file size: %d\n",
+		width, height, bpp, dataOffset, fileSize)
+
+	// We only support 24-bit and 32-bit BMPs
+	if bpp != 24 && bpp != 32 {
+		return nil, fmt.Errorf("unsupported BMP bit depth: %d (only 24 and 32 bit supported)", bpp)
+	}
+
+	// Handle negative height (top-down BMP)
+	topDown := height < 0
+	if topDown {
+		height = -height
+	}
+
+	// Create image
+	img := image.NewRGBA(image.Rect(0, 0, int(width), int(height)))
+
+	// Calculate row size (BMP rows are padded to 4-byte boundaries)
+	bytesPerPixel := int(bpp) / 8
+	rowSize := ((int(width)*bytesPerPixel + 3) / 4) * 4
+
+	// Parse pixel data
+	pixelData := data[dataOffset:]
+
+	for y := 0; y < int(height); y++ {
+		yPos := y
+		if !topDown {
+			yPos = int(height) - 1 - y // BMP is normally bottom-up
+		}
+
+		rowStart := y * rowSize
+		if rowStart >= len(pixelData) {
+			return nil, fmt.Errorf("BMP data truncated at row %d", y)
+		}
+
+		for x := 0; x < int(width); x++ {
+			pos := rowStart + x*bytesPerPixel
+			if pos+bytesPerPixel-1 >= len(pixelData) {
+				return nil, fmt.Errorf("BMP data truncated at pixel (%d,%d)", x, y)
+			}
+
+			// BMP stores in BGR(A) format
+			var r, g, b, a uint8
+			if bpp == 24 {
+				b = pixelData[pos]
+				g = pixelData[pos+1]
+				r = pixelData[pos+2]
+				a = 255 // Full opacity for 24-bit
+			} else { // 32-bit
+				b = pixelData[pos]
+				g = pixelData[pos+1]
+				r = pixelData[pos+2]
+				a = pixelData[pos+3]
+			}
+
+			img.SetRGBA(x, yPos, color.RGBA{r, g, b, a})
+		}
+	}
+
+	return img, nil
+}
+
+// convertImageToCnv converts a TGA or BMP file back to the proprietary CNV format
+// Note: BMP is the preferred format; TGA support is maintained for backward compatibility
 func convertImageToCnv(filePath string) ([]byte, error) {
 	// Read the image file
 	fileData, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("error reading image file: %w", err)
 	}
-
 	// Determine input file format based on extension
 	ext := strings.ToLower(filepath.Ext(filePath))
 	fmt.Printf("Converting image from %s format to CNV\n", ext)
@@ -120,23 +197,13 @@ func convertImageToCnv(filePath string) ([]byte, error) {
 
 	// Convert pixel data
 	pixelData := make([]byte, width*height*4)
-
 	// CNV format expects data in bottom-up order (like TGA)
-	// If source is PNG (top-down), we need to flip the rows
-	// If source is TGA (already bottom-up), we keep as is
+	// TGA is already in bottom-up order, so we use direct mapping
 	for y := range height {
 		for x := range width {
 			r, g, b, a := img.At(x, y).RGBA()
 
-			var pos int
-			if ext == ".png" {
-				// Flip the row order for PNG source (top-down to bottom-up)
-				pos = 4 * ((height-1-y)*width + x)
-			} else {
-				// TGA is already in bottom-up order, so we use direct mapping
-				pos = 4 * (y*width + x)
-			}
-
+			pos := 4 * (y*width + x)
 			if pos+3 >= len(pixelData) {
 				return nil, fmt.Errorf("pixel data buffer overflow at position (%d,%d)", x, y)
 			}
