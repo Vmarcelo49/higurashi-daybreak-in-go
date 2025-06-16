@@ -19,7 +19,6 @@ type FileEntry struct {
 	Name   string // Name of the file
 }
 
-
 // listBundle reads a bundle file and prints the table data
 func listBundle(bundlePath string) error {
 	if _, err := os.Stat(bundlePath); os.IsNotExist(err) {
@@ -325,5 +324,104 @@ func patchFileByIndex(outputFile *os.File, inputFileName string, fileEntries []*
 	}
 
 	fmt.Printf("Successfully updated entry at index %d\n", targetIndex)
+	return nil
+}
+
+// extractSingleFile extracts a single file from the bundle to a specified path
+func extractSingleFile(bundlePath string, fileIndex int, outputPath string) error {
+	file, err := os.Open(bundlePath)
+	if err != nil {
+		return fmt.Errorf("unable to open %s: %w", bundlePath, err)
+	}
+	defer file.Close()
+
+	_, fileEntries, err := getTableData(file)
+	if err != nil {
+		return fmt.Errorf("failed to get table data: %w", err)
+	}
+
+	if fileIndex < 0 || fileIndex >= len(fileEntries) {
+		return fmt.Errorf("invalid file index %d", fileIndex)
+	}
+
+	entry := fileEntries[fileIndex]
+
+	// Move the file cursor to the correct position
+	if _, err = file.Seek(int64(entry.Offset), 0); err != nil {
+		return fmt.Errorf("error seeking in bundle: %w", err)
+	}
+
+	// Read data from the file
+	fileData := make([]byte, entry.Length)
+	bytesRead, err := file.Read(fileData)
+	if err != nil {
+		return fmt.Errorf("error extracting from bundle: %w", err)
+	}
+	if bytesRead != int(entry.Length) {
+		return fmt.Errorf("expected to read %d bytes, but got %d", entry.Length, bytesRead)
+	}
+
+	encryptionKey := getFileKey(int64(entry.Offset))
+	var decryptedData []byte
+	for i := range int(entry.Length) {
+		decryptedData = append(decryptedData, fileData[i]^byte(encryptionKey))
+	}
+
+	// Handle conversion based on file type
+	finalOutputPath := outputPath
+	if entry.Name[len(entry.Name)-4:] == ".cnv" {
+		dataKey := decryptedData[0]
+
+		if dataKey == 1 {
+			// WAV conversion with panic recovery
+			err = func() (convertErr error) {
+				defer func() {
+					if r := recover(); r != nil {
+						convertErr = fmt.Errorf("WAV conversion panicked: %v", r)
+					}
+				}()
+				return convertWav(&decryptedData)
+			}()
+
+			if err != nil {
+				// Change extension to .unknown for failed WAV conversion
+				if strings.HasSuffix(finalOutputPath, ".cnv") {
+					finalOutputPath = finalOutputPath[:len(finalOutputPath)-4] + ".unknown"
+				}
+			} else {
+				// Change extension to .wav for successful conversion
+				if strings.HasSuffix(finalOutputPath, ".cnv") {
+					finalOutputPath = finalOutputPath[:len(finalOutputPath)-4] + ".wav"
+				}
+			}
+		} else if dataKey == 24 || dataKey == 32 {
+			err = convertImage(&decryptedData)
+			if err != nil {
+				return fmt.Errorf("error converting image: %w", err)
+			}
+			// Change extension to .bmp for image conversion
+			if strings.HasSuffix(finalOutputPath, ".cnv") {
+				finalOutputPath = finalOutputPath[:len(finalOutputPath)-4] + ".bmp"
+			}
+		} else {
+			// Unknown data key, save as .unknown
+			if strings.HasSuffix(finalOutputPath, ".cnv") {
+				finalOutputPath = finalOutputPath[:len(finalOutputPath)-4] + ".unknown"
+			}
+		}
+	}
+
+	// Create directories as needed for the output path
+	dirPath := filepath.Dir(finalOutputPath)
+	if err = os.MkdirAll(dirPath, os.ModePerm); err != nil {
+		return fmt.Errorf("error creating directory for %s: %w", finalOutputPath, err)
+	}
+
+	// Write the converted data to a new file
+	err = os.WriteFile(finalOutputPath, decryptedData, 0644)
+	if err != nil {
+		return fmt.Errorf("unable to write %s: %w", finalOutputPath, err)
+	}
+
 	return nil
 }

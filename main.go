@@ -19,6 +19,7 @@ func main() {
 		fmt.Printf("  %s -gui                            (Launch GUI mode)\n", filepath.Base(os.Args[0]))
 		fmt.Printf("  %s <datfile> -list                 (Command line: List content)\n", filepath.Base(os.Args[0]))
 		fmt.Printf("  %s <datfile> -extract <output_folder> [-pattern <files_pattern>] (Command line: Extract images as BMP)\n", filepath.Base(os.Args[0]))
+		fmt.Printf("  %s <datfile> -extract-single <index> <output_file> (Command line: Extract single file by index)\n", filepath.Base(os.Args[0]))
 		fmt.Printf("  %s <datfile> -update <source_files_path> (Command line: Update)\n", filepath.Base(os.Args[0]))
 		fmt.Printf("  %s <datfile> -single-patch <input_file>:<index> (Command line: Patch single file)\n", filepath.Base(os.Args[0]))
 		fmt.Println("  (Note: update and patch operations create backups of the original .DAT file before patching)")
@@ -29,22 +30,31 @@ func main() {
 	// Check for GUI mode first
 	if len(args) == 0 {
 		// No arguments - launch GUI
-		gui := NewGUI("")
-		gui.Run()
+		err := RunGuiguiGUI("")
+		if err != nil {
+			fmt.Println("Error launching GUI:", err)
+			os.Exit(1)
+		}
 		return
 	}
 
 	if len(args) == 1 && args[0] == "-gui" {
 		// Explicit GUI mode
-		gui := NewGUI("")
-		gui.Run()
+		err := RunGuiguiGUI("")
+		if err != nil {
+			fmt.Println("Error launching GUI:", err)
+			os.Exit(1)
+		}
 		return
 	}
 
 	if len(args) == 1 && !strings.HasPrefix(args[0], "-") {
 		// Single DAT file argument - launch GUI with file loaded
-		gui := NewGUI(args[0])
-		gui.Run()
+		err := RunGuiguiGUI(args[0])
+		if err != nil {
+			fmt.Println("Error launching GUI:", err)
+			os.Exit(1)
+		}
 		return
 	}
 
@@ -93,6 +103,31 @@ func main() {
 			fmt.Println(err)
 			os.Exit(1)
 		}
+
+	case "-extract-single":
+		if len(commandArgs) < 2 {
+			fmt.Println("Error: -extract-single requires an index and output file")
+			usage()
+			os.Exit(1)
+		}
+
+		// Parse the index
+		index, err := strconv.Atoi(commandArgs[0])
+		if err != nil {
+			fmt.Printf("Error: Invalid index '%s'. Must be a number.\n", commandArgs[0])
+			os.Exit(1)
+		}
+
+		outputFile := commandArgs[1]
+
+		// Extract the single file
+		err = extractSingleFile(datFile, index, outputFile)
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+
+		fmt.Printf("File at index %d extracted successfully to: %s\n", index, outputFile)
 
 	case "-update":
 		if len(commandArgs) < 1 {

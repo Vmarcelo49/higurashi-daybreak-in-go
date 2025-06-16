@@ -154,9 +154,6 @@ func convertImageToBMP(data *[]byte) error {
 			}
 		}
 	}
-
 	*data = bmpData
 	return nil
 }
-
-// convertImage converts CNV image data to BMP format
