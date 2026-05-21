@@ -28,35 +28,6 @@ func main() {
 	args := os.Args[1:]
 
 	// Check for GUI mode first
-	if len(args) == 0 {
-		// No arguments - launch GUI
-		err := RunGuiguiGUI("")
-		if err != nil {
-			fmt.Println("Error launching GUI:", err)
-			os.Exit(1)
-		}
-		return
-	}
-
-	if len(args) == 1 && args[0] == "-gui" {
-		// Explicit GUI mode
-		err := RunGuiguiGUI("")
-		if err != nil {
-			fmt.Println("Error launching GUI:", err)
-			os.Exit(1)
-		}
-		return
-	}
-
-	if len(args) == 1 && !strings.HasPrefix(args[0], "-") {
-		// Single DAT file argument - launch GUI with file loaded
-		err := RunGuiguiGUI(args[0])
-		if err != nil {
-			fmt.Println("Error launching GUI:", err)
-			os.Exit(1)
-		}
-		return
-	}
 
 	// Command line mode - expect: <datfile> <command> [options]
 	if len(args) < 2 {

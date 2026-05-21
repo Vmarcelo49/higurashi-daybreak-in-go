@@ -140,8 +140,8 @@ func convertImageToCnv(filePath string) ([]byte, error) {
 	// Convert pixel data to CNV format (BGRA, top-down order)
 	pixelData := make([]byte, width*height*4)
 
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
+	for y := range height {
+		for x := range width {
 			r, g, b, a := img.At(x, y).RGBA()
 
 			// Calculate position in CNV data (top-down, left-to-right)
