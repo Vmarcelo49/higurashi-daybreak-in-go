@@ -1,147 +1,127 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"bundleTools/archive"
 )
 
 // Go port of https://github.com/HigurashiArchive/higurashi-daybreak/blob/master/bundle-tools.pl
 
 func main() {
-	// Custom usage message
+	// CLI parsing and execution are split into helper functions to
+	// keep `main` minimal and centralize error handling.
+	datFile, opts, err := parseArgs()
+	if err != nil {
+		fmt.Println(err)
+		flag.Usage()
+		os.Exit(1)
+	}
+
+	if err := run(datFile, opts); err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+}
+
+// Options holds CLI flag values after parsing.
+type Options struct {
+	List             bool
+	Extract          string
+	Pattern          string
+	ExtractSingle    int
+	ExtractSingleOut string
+	Update           string
+	SinglePatch      string
+}
+
+// parseArgs configures flags, parses os.Args and returns the dat file and options.
+func parseArgs() (string, Options, error) {
 	usage := func() {
 		fmt.Println("Usage:")
-		fmt.Printf("  %s                                 (Launch GUI mode)\n", filepath.Base(os.Args[0]))
-		fmt.Printf("  %s <datfile>                       (Launch GUI mode with DAT file loaded)\n", filepath.Base(os.Args[0]))
-		fmt.Printf("  %s -gui                            (Launch GUI mode)\n", filepath.Base(os.Args[0]))
-		fmt.Printf("  %s <datfile> -list                 (Command line: List content)\n", filepath.Base(os.Args[0]))
-		fmt.Printf("  %s <datfile> -extract <output_folder> [-pattern <files_pattern>] (Command line: Extract images as BMP)\n", filepath.Base(os.Args[0]))
-		fmt.Printf("  %s <datfile> -extract-single <index> <output_file> (Command line: Extract single file by index)\n", filepath.Base(os.Args[0]))
-		fmt.Printf("  %s <datfile> -update <source_files_path> (Command line: Update)\n", filepath.Base(os.Args[0]))
-		fmt.Printf("  %s <datfile> -single-patch <input_file>:<index> (Command line: Patch single file)\n", filepath.Base(os.Args[0]))
+		fmt.Printf("  %s <datfile> -list                                     (List content)\n", filepath.Base(os.Args[0]))
+		fmt.Printf("  %s <datfile> -extract <output_folder> [-pattern <files_pattern>]\n", filepath.Base(os.Args[0]))
+		fmt.Printf("      (Extract files to output folder)\n")
+		fmt.Printf("  %s <datfile> -extract-single <index> -out <output_file>\n", filepath.Base(os.Args[0]))
+		fmt.Printf("      (Extract single file by index)\n")
+		fmt.Printf("  %s <datfile> -update <source_files_path>               (Update from source path)\n", filepath.Base(os.Args[0]))
+		fmt.Printf("  %s <datfile> -single-patch <input_file>:<index>        (Patch single file)\n", filepath.Base(os.Args[0]))
 		fmt.Println("  (Note: update and patch operations create backups of the original .DAT file before patching)")
 	}
-	// Handle arguments manually for the correct syntax
-	args := os.Args[1:]
 
-	// Check for GUI mode first
+	listFlag := flag.Bool("list", false, "List content of the DAT file")
+	extractFlag := flag.String("extract", "", "Extract to output folder")
+	patternFlag := flag.String("pattern", "", "File pattern to filter when extracting")
+	extractSingleFlag := flag.Int("extract-single", -1, "Extract single file by index")
+	extractSingleOut := flag.String("out", "", "Output file for -extract-single")
+	updateFlag := flag.String("update", "", "Source files path to update the DAT")
+	singlePatchFlag := flag.String("single-patch", "", "Patch single file using format input_file:index")
 
-	// Command line mode - expect: <datfile> <command> [options]
-	if len(args) < 2 {
-		fmt.Println("Error: You must provide a DAT file and a command for command line operations")
-		usage()
-		os.Exit(1)
+	flag.Usage = usage
+	flag.Parse()
+
+	args := flag.Args()
+	if len(args) < 1 {
+		return "", Options{}, fmt.Errorf("you must provide a DAT file")
 	}
 
 	datFile := args[0]
-	if strings.HasPrefix(datFile, "-") {
-		fmt.Println("Error: First argument must be a DAT file, not a flag")
-		usage()
-		os.Exit(1)
+
+	opts := Options{
+		List:             *listFlag,
+		Extract:          *extractFlag,
+		Pattern:          *patternFlag,
+		ExtractSingle:    *extractSingleFlag,
+		ExtractSingleOut: *extractSingleOut,
+		Update:           *updateFlag,
+		SinglePatch:      *singlePatchFlag,
 	}
 
-	command := args[1]
-	commandArgs := args[2:]
+	return datFile, opts, nil
+}
 
-	// Parse commands
-	switch command {
-	case "-list":
-		err := listBundle(datFile)
-		if err != nil {
-			fmt.Println(err)
-			os.Exit(1)
+// run executes the requested command and returns an error instead of exiting.
+func run(datFile string, opts Options) error {
+	switch {
+	case opts.List:
+		return archive.ListBundle(datFile)
+
+	case opts.Extract != "":
+		return archive.ExtractBundle(datFile, opts.Extract, opts.Pattern)
+
+	case opts.ExtractSingle >= 0:
+		if opts.ExtractSingleOut == "" {
+			return fmt.Errorf("-extract-single requires -out <output_file>")
 		}
-
-	case "-extract":
-		if len(commandArgs) < 1 {
-			fmt.Println("Error: -extract requires an output folder")
-			usage()
-			os.Exit(1)
+		if err := archive.ExtractSingleFile(datFile, opts.ExtractSingle, opts.ExtractSingleOut); err != nil {
+			return err
 		}
-		outputFolder := commandArgs[0]
-		pattern := ""
+		fmt.Printf("File at index %d extracted successfully to: %s\n", opts.ExtractSingle, opts.ExtractSingleOut)
+		return nil
 
-		// Check for optional -pattern flag
-		if len(commandArgs) >= 3 && commandArgs[1] == "-pattern" {
-			pattern = commandArgs[2]
-		}
+	case opts.Update != "":
+		archive.PatchBundle(datFile, opts.Update)
+		return nil
 
-		err := extractBundle(datFile, outputFolder, pattern)
-		if err != nil {
-			fmt.Println(err)
-			os.Exit(1)
-		}
-
-	case "-extract-single":
-		if len(commandArgs) < 2 {
-			fmt.Println("Error: -extract-single requires an index and output file")
-			usage()
-			os.Exit(1)
-		}
-
-		// Parse the index
-		index, err := strconv.Atoi(commandArgs[0])
-		if err != nil {
-			fmt.Printf("Error: Invalid index '%s'. Must be a number.\n", commandArgs[0])
-			os.Exit(1)
-		}
-
-		outputFile := commandArgs[1]
-
-		// Extract the single file
-		err = extractSingleFile(datFile, index, outputFile)
-		if err != nil {
-			fmt.Println(err)
-			os.Exit(1)
-		}
-
-		fmt.Printf("File at index %d extracted successfully to: %s\n", index, outputFile)
-
-	case "-update":
-		if len(commandArgs) < 1 {
-			fmt.Println("Error: -update requires a source files path")
-			usage()
-			os.Exit(1)
-		}
-		sourceFilesPath := commandArgs[0]
-		patchBundle(datFile, sourceFilesPath)
-
-	case "-single-patch":
-		if len(commandArgs) < 1 {
-			fmt.Println("Error: -single-patch requires a file:index parameter")
-			usage()
-			os.Exit(1)
-		}
-
-		// Parse the single-patch parameter (format: <file>:<index>)
-		parts := strings.Split(commandArgs[0], ":")
+	case opts.SinglePatch != "":
+		parts := strings.Split(opts.SinglePatch, ":")
 		if len(parts) != 2 {
-			fmt.Println("Error: Invalid format for -single-patch. Expected <input_file>:<index>")
-			os.Exit(1)
+			return fmt.Errorf("invalid format for -single-patch. Expected <input_file>:<index>")
 		}
-
 		inputFilePath := parts[0]
 		indexStr := parts[1]
-
-		// Convert the index string to an integer
 		index, err := strconv.Atoi(indexStr)
 		if err != nil {
-			fmt.Printf("Error: Invalid index '%s'. Must be a number.\n", indexStr)
-			os.Exit(1)
+			return fmt.Errorf("invalid index '%s'. Must be a number", indexStr)
 		}
-		// Patch the single file
-		err = patchSingleFile(datFile, inputFilePath, index)
-		if err != nil {
-			fmt.Println(err)
-			os.Exit(1)
-		}
+		return archive.PatchSingleFile(datFile, inputFilePath, index)
 
 	default:
-		fmt.Printf("Error: Unknown command '%s'. Must be one of -list, -extract, -update, or -single-patch\n", command)
-		usage()
-		os.Exit(1)
+		return fmt.Errorf("no command provided")
 	}
 }

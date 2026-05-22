@@ -1,12 +1,13 @@
-package main
+package archive
 
 import (
+	"bundleTools/crypto"
+	"bundleTools/fileutil"
 	"encoding/binary"
 	"fmt"
 	"io"
 	"log"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -14,8 +15,8 @@ import (
 	"golang.org/x/text/transform"
 )
 
-// patchSingleFile patches a single file in the DAT file and updates all file table entries accordingly
-func patchSingleFile(datFilePath string, inputFilePath string, targetIndex int) error {
+// PatchSingleFile patches a single file in the DAT file and updates all file table entries accordingly
+func PatchSingleFile(datFilePath string, inputFilePath string, targetIndex int) error {
 	// Create a backup filename by adding a timestamp
 	timeStamp := time.Now().Format("20060102-150405")
 	backupFileName := fmt.Sprintf("%s.%s.bak", datFilePath, timeStamp)
@@ -50,35 +51,11 @@ func patchSingleFile(datFilePath string, inputFilePath string, targetIndex int) 
 	// Validate target index
 	if targetIndex < 0 || targetIndex >= len(fileEntries) {
 		return fmt.Errorf("invalid file index: %d (valid range: 0-%d)", targetIndex, len(fileEntries)-1)
-	} // Read the new file data
-	var newFileData []byte
-
-	// Check if this is an image file that needs conversion to CNV format (BMP only)
-	if strings.HasSuffix(strings.ToLower(fileEntries[targetIndex].Name), ".cnv") {
-		ext := strings.ToLower(filepath.Ext(inputFilePath))
-		if ext == ".bmp" {
-			// Convert the image back to CNV format
-			fmt.Printf("Converting %s back to CNV format...\n", filepath.Base(inputFilePath))
-			convertedData, err := convertImageToCnv(inputFilePath)
-			if err != nil {
-				return fmt.Errorf("error converting image to CNV: %w", err)
-			}
-			newFileData = convertedData
-			fmt.Printf("Successfully converted %s to CNV format (%d bytes)\n",
-				filepath.Base(inputFilePath), len(newFileData))
-		} else {
-			// For non-image files, read directly
-			newFileData, err = os.ReadFile(inputFilePath)
-			if err != nil {
-				return fmt.Errorf("error reading input file %s: %v", inputFilePath, err)
-			}
-		}
-	} else {
-		// For non-CNV files, read directly
-		newFileData, err = os.ReadFile(inputFilePath)
-		if err != nil {
-			return fmt.Errorf("error reading input file %s: %v", inputFilePath, err)
-		}
+	}
+	// Read the new file data (convert BMP->CNV automatically when needed)
+	newFileData, err := readInputPossiblyConvertToCNV(inputFilePath, fileutil.HasExtCI(fileEntries[targetIndex].Name, ".cnv"))
+	if err != nil {
+		return fmt.Errorf("error reading input file %s: %v", inputFilePath, err)
 	}
 
 	// Create a temporary file for the patched version
@@ -136,15 +113,11 @@ func patchSingleFile(datFilePath string, inputFilePath string, targetIndex int) 
 	for i, entry := range fileEntries {
 		// If this is the target file, write the new data instead
 		if i == targetIndex {
-			// Encrypt the new file data
-			encryptionKey := getFileKey(int64(entry.Offset))
-			encryptedData := make([]byte, len(newFileData))
-			for j := 0; j < len(newFileData); j++ {
-				encryptedData[j] = newFileData[j] ^ byte(encryptionKey)
+			// Encrypt the new file data and write
+			encryptedData := encryptBytesWithOffset(newFileData, entry.Offset)
+			if _, err = patchedFile.Write(encryptedData); err != nil {
+				return fmt.Errorf("error writing patched file data: %v", err)
 			}
-
-			// Write the encrypted data to the patched file
-			_, err = patchedFile.Write(encryptedData)
 			if err != nil {
 				return fmt.Errorf("error writing patched file data: %v", err)
 			}
@@ -235,7 +208,7 @@ func writeUpdatedFileTable(outputFile *os.File, fileEntries []*FileEntry) error 
 	}
 
 	// Encrypt the table data and write it
-	encryptedTableData := encryptFileTableBlock(0, tableData)
+	encryptedTableData := crypto.EncryptFileTableBlock(0, tableData)
 	_, err = outputFile.Write(encryptedTableData)
 	if err != nil {
 		return fmt.Errorf("error writing file table: %v", err)

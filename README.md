@@ -1,17 +1,8 @@
 # This tool can extract, update, and list files in `.DAT` Higurashi Daybreak files
 
-## Usage:
+## Usage (Command-line)
 
-**GUI Mode (default):**  
-```bash
-BundleTools.exe
-# or
-BundleTools.exe <datfile>
-# or
-BundleTools.exe -gui
-```
-
-**Command Line Mode:**
+This tool is a command-line utility for listing, extracting, and patching files inside `.DAT` Higurashi Daybreak files.
 
 **Listing files inside the .DAT:**  
 ```bash

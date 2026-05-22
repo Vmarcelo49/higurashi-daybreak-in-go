@@ -1,7 +1,7 @@
-package main
+package crypto
 
-// decryptFileTableBlock decrypts the file table block
-func decryptFileTableBlock(index int, encryptedData []byte) []byte {
+// DecryptFileTableBlock decrypts the file table block
+func DecryptFileTableBlock(index int, encryptedData []byte) []byte {
 	// Apply 9-bit mask
 	index = index & 0x1ff
 
@@ -25,14 +25,14 @@ func decryptFileTableBlock(index int, encryptedData []byte) []byte {
 	return decryptedData
 }
 
-// getFileKey calculates the encryption key from an offset
-func getFileKey(offset int64) byte {
+// GetFileKey calculates the encryption key from an offset
+func GetFileKey(offset int64) byte {
 	return byte((offset>>1)&0xff | 0x08)
 }
 
-// encryptFileTableBlock encrypts the file table block - inverse of decryptFileTableBlock
+// EncryptFileTableBlock encrypts the file table block - inverse of decryptFileTableBlock
 // but actually the same operation since it's XOR-based
-func encryptFileTableBlock(index int, decryptedData []byte) []byte {
+func EncryptFileTableBlock(index int, decryptedData []byte) []byte {
 	// Simply reuse decryptFileTableBlock since XOR encryption/decryption is the same operation
-	return decryptFileTableBlock(index, decryptedData)
+	return DecryptFileTableBlock(index, decryptedData)
 }
